@@ -4,6 +4,8 @@ A proof of concept that puts an OpenAI ChatKit interface in front of the OCI Gen
 
 **Model requests go to OCI.** The browser loads the ChatKit web component from OpenAI's CDN, but the model is called through OCI and the OCI IAM signing credentials stay on the Python backend. This project does not use an OpenAI API key, an OpenAI-hosted Agent Builder workflow, or Codex sign-in.
 
+For the code-level architecture and request walkthrough, see [How the ChatKit + Python + OCI Responses API sample works](docs/ARCHITECTURE.md).
+
 ## What is included
 
 - **Streamlit shell** at `http://127.0.0.1:8501` with connection status and a link to the chat.
@@ -63,13 +65,13 @@ For local development, configure an OCI API signing key for your IAM user. The O
 On OCI Compute, use an instance principal instead of copying a user private key to the VM:
 
 1. Create a dynamic group whose matching rule selects only the app instance, for example `All {instance.id = '<compute-instance-ocid>'}`.
-2. Grant that dynamic group permission to invoke only the model the app uses, scoped to the compartment containing the Generative AI project:
+2. Grant that dynamic group permission to call the OCI Responses API, scoped to the compartment containing the Generative AI project. Oracle's [Responses API quick start](https://docs.oracle.com/en-us/iaas/Content/generative-ai/get-started-agents.htm) documents the `generative-ai-response` resource. A compartment-scoped policy to review with your OCI administrator is:
 
    ```text
-   allow dynamic-group <group-name> to use generative-ai-family in compartment <project-compartment> where target.model.id = 'google.gemini-2.5-flash'
+   allow dynamic-group <group-name> to manage generative-ai-response in compartment <project-compartment>
    ```
 
-   Oracle documents the model condition and `use generative-ai-family` permission in [Limiting Model Inference Access with IAM Policies](https://docs.oracle.com/en-us/iaas/Content/generative-ai/limit-model-access.htm). Oracle's [`OciInstancePrincipalAuth` helper](https://docs.oracle.com/en-us/iaas/Content/generative-ai/oci-genai-auth.htm) handles instance-principal signing.
+   Use a dynamic group rule that matches only this application instance. The `manage` verb is scoped to the response resource and project compartment; review the grant with your administrator before applying it. Oracle's [`OciInstancePrincipalAuth` helper](https://docs.oracle.com/en-us/iaas/Content/generative-ai/oci-genai-auth.htm) handles instance-principal signing. In our OCI Compute environment, the existing `use generative-ai-family` permission did not authorize the Responses API request; the instance app is installed, but its service remains stopped until the response permission is approved.
 
 The app reads the profile named `DEFAULT` in `~/.oci/config` by default. The config should have the usual OCI fields:
 
