@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
-from oci_genai_auth import OciUserPrincipalAuth
+from oci_genai_auth import OciInstancePrincipalAuth, OciUserPrincipalAuth
 from openai import OpenAI
 
 
@@ -165,9 +165,7 @@ def _call_oci_responses(model_input: list[dict[str, str]]) -> str:
     region = os.getenv("OCI_REGION", "").strip()
     project_ocid = os.getenv("OCI_PROJECT_OCID", "").strip()
     model_id = os.getenv("OCI_MODEL_ID", "").strip()
-    config_file = Path(os.getenv("OCI_CONFIG_FILE", "~/.oci/config")).expanduser()
-    if not config_file.is_absolute():
-        config_file = APP_DIR / config_file
+    auth_mode = os.getenv("OCI_AUTH_MODE", "user").strip().lower()
     profile_name = os.getenv("OCI_PROFILE_NAME", "DEFAULT").strip()
 
     missing = [
@@ -176,20 +174,30 @@ def _call_oci_responses(model_input: list[dict[str, str]]) -> str:
             ("OCI_REGION", region),
             ("OCI_PROJECT_OCID", project_ocid),
             ("OCI_MODEL_ID", model_id),
-            ("OCI_PROFILE_NAME", profile_name),
         )
         if not value
     ]
+    if auth_mode in {"user", "user_principal"} and not profile_name:
+        missing.append("OCI_PROFILE_NAME")
     if missing:
         raise RuntimeError("Missing required OCI configuration: " + ", ".join(missing))
-    if not config_file.is_file():
-        raise RuntimeError(f"OCI config file was not found: {config_file}")
+
+    if auth_mode in {"instance", "instance_principal"}:
+        signer = OciInstancePrincipalAuth()
+    elif auth_mode in {"user", "user_principal"}:
+        config_file = Path(os.getenv("OCI_CONFIG_FILE", "~/.oci/config")).expanduser()
+        if not config_file.is_absolute():
+            config_file = APP_DIR / config_file
+        if not config_file.is_file():
+            raise RuntimeError(f"OCI config file was not found: {config_file}")
+        signer = OciUserPrincipalAuth(
+            config_file=str(config_file),
+            profile_name=profile_name,
+        )
+    else:
+        raise RuntimeError("OCI_AUTH_MODE must be 'user' or 'instance'.")
 
     endpoint = f"https://inference.generativeai.{region}.oci.oraclecloud.com/openai/v1"
-    signer = OciUserPrincipalAuth(
-        config_file=str(config_file),
-        profile_name=profile_name,
-    )
     http_client = httpx.Client(auth=signer)
     with OpenAI(
         base_url=endpoint,
@@ -274,10 +282,15 @@ app.add_middleware(
 
 @app.get("/healthz")
 async def healthz() -> dict[str, bool | str]:
+    auth_mode = os.getenv("OCI_AUTH_MODE", "user").strip().lower()
     configured = all(
         os.getenv(name, "").strip()
-        for name in ("OCI_REGION", "OCI_PROJECT_OCID", "OCI_MODEL_ID", "OCI_PROFILE_NAME")
+        for name in ("OCI_REGION", "OCI_PROJECT_OCID", "OCI_MODEL_ID")
     )
+    if auth_mode in {"user", "user_principal"}:
+        configured = configured and bool(os.getenv("OCI_PROFILE_NAME", "DEFAULT").strip())
+    elif auth_mode not in {"instance", "instance_principal"}:
+        configured = False
     return {"status": "ok", "oci_configured": configured}
 
 

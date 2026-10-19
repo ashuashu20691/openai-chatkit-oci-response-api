@@ -23,6 +23,7 @@ st.caption("ChatKit interface · OCI Generative AI Responses API")
 region = os.getenv("OCI_REGION", "").strip()
 project_ocid = os.getenv("OCI_PROJECT_OCID", "").strip()
 model_id = os.getenv("OCI_MODEL_ID", "").strip()
+oci_auth_mode = os.getenv("OCI_AUTH_MODE", "user").strip().lower()
 oci_profile = os.getenv("OCI_PROFILE_NAME", "DEFAULT").strip()
 
 with st.sidebar:
@@ -30,7 +31,10 @@ with st.sidebar:
     st.write(f"**OCI region:** {region or 'Not configured'}")
     st.write(f"**OCI model:** {model_id or 'Not configured'}")
     st.write(f"**OCI project:** {'Configured' if project_ocid else 'Not configured'}")
-    st.write(f"**OCI IAM profile:** {oci_profile or 'Not configured'}")
+    if oci_auth_mode in {"instance", "instance_principal"}:
+        st.write("**OCI authentication:** Instance principal")
+    else:
+        st.write(f"**OCI authentication:** User profile ({oci_profile or 'Not configured'})")
     st.caption("OCI IAM request signing happens in the Python backend; credentials are never sent to the browser.")
     st.warning("End-user Oracle SSO is not configured in this local starter.")
 
@@ -40,10 +44,13 @@ missing = [
         ("OCI_REGION", region),
         ("OCI_PROJECT_OCID", project_ocid),
         ("OCI_MODEL_ID", model_id),
-        ("OCI_PROFILE_NAME", oci_profile),
     )
     if not value
 ]
+if oci_auth_mode in {"user", "user_principal"} and not oci_profile:
+    missing.append("OCI_PROFILE_NAME")
+if oci_auth_mode not in {"user", "user_principal", "instance", "instance_principal"}:
+    missing.append("OCI_AUTH_MODE (use 'user' or 'instance')")
 
 if missing:
     st.warning("Complete the OCI settings in the app's `.env` file before starting a chat.")

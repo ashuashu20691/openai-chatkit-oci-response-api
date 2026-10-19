@@ -1,6 +1,6 @@
 # OCI Generative AI + OpenAI ChatKit + Streamlit
 
-A local proof of concept that puts an OpenAI ChatKit interface in front of the OCI Generative AI Responses API. Streamlit provides a small launch and connection-status page; a Python FastAPI service hosts ChatKit's custom backend and signs OCI requests with an OCI IAM user profile.
+A proof of concept that puts an OpenAI ChatKit interface in front of the OCI Generative AI Responses API. Streamlit provides a small launch and connection-status page; a Python FastAPI service hosts ChatKit's custom backend and signs OCI requests with OCI IAM.
 
 **Model requests go to OCI.** The browser loads the ChatKit web component from OpenAI's CDN, but the model is called through OCI and the OCI IAM signing credentials stay on the Python backend. This project does not use an OpenAI API key, an OpenAI-hosted Agent Builder workflow, or Codex sign-in.
 
@@ -30,7 +30,7 @@ sequenceDiagram
     Browser-->>User: Display assistant reply
 ```
 
-The OCI signer reads the selected profile from the OCI config file on the server. The browser never receives the signing key or OCI config. The request includes the OCI Generative AI project OCID and model ID.
+With user-principal mode, the OCI signer reads the selected profile from the OCI config file on the server. With instance-principal mode, it uses the compute instance's identity and does not need a copied user key. The browser never receives signing credentials. The request includes the OCI Generative AI project OCID and model ID.
 
 The OpenAI Python SDK requires an `api_key` argument when creating its client. This sample supplies the literal placeholder `not-used`; it is not a credential. OCI IAM signing is what authenticates the request. Do not put an OpenAI key in this app expecting it to grant OCI access.
 
@@ -38,7 +38,7 @@ The OpenAI Python SDK requires an `api_key` argument when creating its client. T
 
 - An OCI tenancy with OCI Generative AI enabled in the chosen region.
 - A Generative AI project OCID and a model available to that project and region.
-- An OCI IAM user with an API signing key registered in OCI, plus a local OCI CLI config profile for that user.
+- For local development, an OCI IAM user with an API signing key registered in OCI and a local OCI CLI config profile. On OCI Compute, an instance principal can be used instead.
 - OCI IAM policy permissions to use OCI Generative AI in the project's compartment. Ask your tenancy administrator if you cannot manage policies yourself; see Oracle's [Generative AI IAM policies](https://docs.oracle.com/en-us/iaas/Content/generative-ai/iam-policies.htm).
 - Python 3.10 or newer.
 
@@ -58,7 +58,18 @@ python -m pip install -r requirements.txt
 
 ### 2. Configure OCI IAM authentication
 
-Configure an OCI API signing key for your IAM user. The OCI CLI can create a config and key pair with `oci setup config`; follow Oracle's [API signing key setup guide](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm). Upload/register the public key in OCI and keep the private key on your computer.
+For local development, configure an OCI API signing key for your IAM user. The OCI CLI can create a config and key pair with `oci setup config`; follow Oracle's [API signing key setup guide](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm). Upload/register the public key in OCI and keep the private key on your computer.
+
+On OCI Compute, use an instance principal instead of copying a user private key to the VM:
+
+1. Create a dynamic group whose matching rule selects only the app instance, for example `All {instance.id = '<compute-instance-ocid>'}`.
+2. Grant that dynamic group permission to invoke only the model the app uses, scoped to the compartment containing the Generative AI project:
+
+   ```text
+   allow dynamic-group <group-name> to use generative-ai-family in compartment <project-compartment> where target.model.id = 'google.gemini-2.5-flash'
+   ```
+
+   Oracle documents the model condition and `use generative-ai-family` permission in [Limiting Model Inference Access with IAM Policies](https://docs.oracle.com/en-us/iaas/Content/generative-ai/limit-model-access.htm). Oracle's [`OciInstancePrincipalAuth` helper](https://docs.oracle.com/en-us/iaas/Content/generative-ai/oci-genai-auth.htm) handles instance-principal signing.
 
 The app reads the profile named `DEFAULT` in `~/.oci/config` by default. The config should have the usual OCI fields:
 
@@ -81,7 +92,7 @@ Create your local environment file:
 cp .env.example .env
 ```
 
-Edit `.env` and set at least `OCI_PROJECT_OCID` to the project you will use. Confirm `OCI_REGION` and `OCI_MODEL_ID` match an available model in that region. The example defaults to `us-chicago-1` and `google.gemini-2.5-flash`.
+Edit `.env` and set at least `OCI_PROJECT_OCID` to the project you will use. Confirm `OCI_REGION` and `OCI_MODEL_ID` match an available model in that region. The example defaults to `us-chicago-1` and `google.gemini-2.5-flash`. For an OCI Compute deployment, set `OCI_AUTH_MODE=instance`; the local OCI profile is then not required.
 
 The default `OCI_CONFIG_FILE=~/.oci/config` uses your normal OCI CLI configuration. To use a config file inside this project instead, set `OCI_CONFIG_FILE=.oci/config` and put your private local config there. The `.oci/` directory is ignored by Git.
 
