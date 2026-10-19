@@ -6,6 +6,37 @@ A proof of concept that puts an OpenAI ChatKit interface in front of the OCI Gen
 
 For the code-level architecture and request walkthrough, see [How the ChatKit + Python + OCI Responses API sample works](docs/ARCHITECTURE.md).
 
+## How ChatKit is integrated with Python and OCI
+
+The integration has three parts. **ChatKit** is the browser chat UI and message protocol. **FastAPI and the Python ChatKit SDK** receive each message and build the conversation input. **The OpenAI Python SDK** sends that input to OCI's OpenAI-compatible Responses API endpoint. OCI IAM signing is only how the Python backend authenticates that HTTP request; it is not the ChatKit integration itself.
+
+The code path is:
+
+1. The ChatKit web component in `/ui` posts a ChatKit request to FastAPI's `/chatkit` route.
+2. `/chatkit` passes the request to `ChatKitServer.process()`.
+3. `OciChatKitServer.respond()` reads recent thread messages from `LocalMemoryStore` and converts them to `{role, content}` input items.
+4. `_call_oci_responses()` creates an OpenAI SDK client with OCI's endpoint as `base_url`, then calls `client.responses.create()`.
+5. The Python server converts `response.output_text` into a ChatKit assistant item and returns it to the browser.
+
+The key adapter code in `chatkit_server.py` is:
+
+```python
+with OpenAI(
+    base_url=f"https://inference.generativeai.{region}.oci.oraclecloud.com/openai/v1",
+    api_key="not-used",  # placeholder required by the OpenAI SDK; not a credential
+    project=project_ocid,
+    http_client=httpx.Client(auth=signer),
+) as client:
+    response = client.responses.create(
+        model=model_id,
+        instructions="You are a helpful assistant. Be clear and concise.",
+        input=model_input,
+    )
+answer = response.output_text
+```
+
+The OpenAI SDK is used as an API client, while `base_url` directs the request to OCI. No model request goes to the OpenAI API. `signer` is selected separately: local user-principal auth or OCI Compute instance-principal auth.
+
 ## What is included
 
 - **Streamlit shell** at `http://127.0.0.1:8501` with connection status and a link to the chat.
