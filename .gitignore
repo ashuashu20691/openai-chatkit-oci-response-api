@@ -1,0 +1,12 @@
+.env
+.oci/
+.venv/
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+.agents/
+.claude/
+.DS_Store
+*.pem
+*.key
+*.log

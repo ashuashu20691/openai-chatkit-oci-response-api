@@ -1,0 +1,8 @@
+fastapi>=0.115,<1
+httpx>=0.27,<1
+oci-genai-auth
+openai>=2.8,<4
+openai-chatkit>=1.6.5,<2
+python-dotenv>=1,<2
+streamlit>=1.40,<2
+uvicorn[standard]>=0.34,<1
